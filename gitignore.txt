@@ -1,0 +1,13 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Streamlit temporary files
+.streamlit/
+
+# OS files
+.DS_Store
+Thumbs.db
