@@ -40,7 +40,7 @@ st.markdown("""
 }
 </style>
 <div class="chat-header">
-    ASK ANYTHING ABOUT BILAL
+    "CHAT WITH NEXTGEN COACHING CENTER
 </div>
 """, unsafe_allow_html=True)
 
@@ -201,4 +201,5 @@ if st.session_state.admin_unlocked:
             )
             df.to_csv("chat_history.csv", index=False)
             st.sidebar.success("✅ Chat history saved as chat_history.csv")
+
 
