@@ -21,7 +21,7 @@ if not OPENROUTER_API_KEY:
 # Page Config
 # -----------------------------
 st.set_page_config(
-    page_title="ASK ANYTHING ABOUT BILAL",
+    page_title="CHAT WITH NEXTGEN COACHING CENTER",
     layout="centered"
 )
 
@@ -201,3 +201,4 @@ if st.session_state.admin_unlocked:
             )
             df.to_csv("chat_history.csv", index=False)
             st.sidebar.success("✅ Chat history saved as chat_history.csv")
+
