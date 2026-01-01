@@ -101,7 +101,7 @@ if user_input:
 
         # Call AI
         if not knowledge:
-            bot_reply = "⚠️ No knowledge uploaded yet. Admin must upload PDFs first."
+            bot_reply = "⚠️ No knowledge uploaded yet. Admin must upload PDFs or add text first."
         else:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -173,9 +173,29 @@ if st.session_state.admin_unlocked:
                 f.write(file.getbuffer())
 
         combined_text = combined_text[:MAX_CONTEXT]
-        with open("knowledge.txt", "w", encoding="utf-8") as f:
-            f.write(combined_text)
-        st.sidebar.success("✅ Knowledge updated successfully")
+        # Append to knowledge.txt
+        with open("knowledge.txt", "a", encoding="utf-8") as f:
+            f.write("\n" + combined_text)
+        st.sidebar.success("✅ Knowledge updated successfully from PDFs")
+
+    # -----------------------------
+    # Text Input for Knowledge
+    st.sidebar.subheader("Add Knowledge Text")
+    text_input = st.sidebar.text_area(
+        "Enter text to add to knowledge base",
+        height=150
+    )
+
+    if st.sidebar.button("Add Text to Knowledge"):
+        if text_input.strip():
+            text_to_add = text_input.strip()[:MAX_CONTEXT]
+            with open("knowledge.txt", "a", encoding="utf-8") as f:
+                f.write("\n" + text_to_add)
+            st.sidebar.success("✅ Text added to knowledge successfully")
+            # Update in-memory knowledge immediately
+            knowledge += "\n" + text_to_add
+        else:
+            st.sidebar.warning("⚠️ Enter some text first.")
 
     # -----------------------------
     # Analytics
@@ -201,4 +221,3 @@ if st.session_state.admin_unlocked:
             )
             df.to_csv("chat_history.csv", index=False)
             st.sidebar.success("✅ Chat history saved as chat_history.csv")
-
