@@ -53,7 +53,7 @@ Official AI Assistant – NextGen Coaching Center
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# Knowledge Directory
+# Knowledge Setup
 # -----------------------------
 KNOWLEDGE_DIR = "knowledge_pdfs"
 os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
@@ -67,8 +67,7 @@ if "messages" not in st.session_state:
         "role": "assistant",
         "content": (
             "👋 Welcome!\n\n"
-            "I can help you with:\n"
-            "- Admissions\n- Fee Structure\n- Courses\n- Timings & Policies\n\n"
+            "I can help you with admissions, fees, courses, and timings.\n"
             "You can ask in **English or Urdu**."
         )
     }]
@@ -85,7 +84,7 @@ if "chat_history" not in st.session_state:
 knowledge = ""
 if os.path.exists("knowledge.txt"):
     with open("knowledge.txt", "r", encoding="utf-8") as f:
-        knowledge = f.read()
+        knowledge = f.read().strip()
 
 # -----------------------------
 # Display Chat
@@ -110,19 +109,15 @@ if user_input:
         })
         with st.chat_message("assistant"):
             st.markdown("🔐 Admin panel unlocked.")
-
     else:
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_input
-        })
+        st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        if not knowledge:
+        if len(knowledge) < 200:
             bot_reply = (
-                "⚠️ Information not available.\n\n"
-                "Please contact the office directly for assistance."
+                "⚠️ Knowledge base is empty or unreadable.\n"
+                "Please contact the office."
             )
         else:
             headers = {
@@ -136,20 +131,22 @@ if user_input:
                     {
                         "role": "system",
                         "content": (
-                            "You are an official AI assistant of a coaching center. "
-                            "Answer briefly (1–2 sentences). "
-                            "Use English or Urdu based on user language. "
-                            "ONLY use the provided document. "
-                            "If the answer is missing, reply exactly: "
+                            "You are the official AI assistant of a coaching center.\n"
+                            "Rules:\n"
+                            "- Use ONLY the provided document\n"
+                            "- Answer briefly (1–3 sentences)\n"
+                            "- Match user language (English/Urdu)\n"
+                            "- If exact answer not found, give closest relevant info\n"
+                            "- If nothing is relevant, reply:\n"
                             "'Information not available. Please contact the office.'"
                         )
                     },
                     {
                         "role": "user",
-                        "content": f"Document:\n{knowledge}\n\nQuestion:\n{user_input}"
+                        "content": f"DOCUMENT:\n{knowledge}\n\nQUESTION:\n{user_input}"
                     }
                 ],
-                "max_output_tokens": 120,
+                "max_output_tokens": 150,
                 "temperature": 0.2
             }
 
@@ -169,11 +166,7 @@ if user_input:
                     )
                     st.markdown(bot_reply)
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": bot_reply
-        })
-
+        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
         st.session_state.chat_history.append(
             (user_input, bot_reply, datetime.now())
         )
@@ -192,58 +185,51 @@ if st.session_state.admin_unlocked:
         accept_multiple_files=True
     )
 
-    combined_text = ""
+    pdf_text = ""
+    unreadable_pdfs = []
 
     if uploaded_files:
         for file in uploaded_files:
             reader = PyPDF2.PdfReader(file)
+            extracted = ""
             for page in reader.pages:
-                combined_text += page.extract_text() or ""
+                extracted += page.extract_text() or ""
+
+            if len(extracted.strip()) < 50:
+                unreadable_pdfs.append(file.name)
+            else:
+                pdf_text += extracted
 
             with open(os.path.join(KNOWLEDGE_DIR, file.name), "wb") as f:
                 f.write(file.getbuffer())
 
-    # Text Information Upload
-    st.sidebar.subheader("Add Text Information")
+    # Text Upload (PRIORITY)
+    st.sidebar.subheader("Add Text Information (High Priority)")
     admin_text = st.sidebar.text_area(
-        "Add or update text information (announcements, fees, notices)"
+        "Fees, courses, admissions, notices"
     )
 
     if st.sidebar.button("Update Knowledge"):
-        final_knowledge = (combined_text + "\n\n" + admin_text)[:MAX_CONTEXT]
+        final_knowledge = (admin_text + "\n\n" + pdf_text)[:MAX_CONTEXT]
         with open("knowledge.txt", "w", encoding="utf-8") as f:
             f.write(final_knowledge)
 
         st.sidebar.success("✅ Knowledge updated successfully")
 
-    # -----------------------------
-    # Analytics
-    # -----------------------------
-    st.sidebar.subheader("Chat Analytics")
-
-    total_q = len(st.session_state.chat_history)
-    st.sidebar.markdown(f"**Total Questions:** {total_q}")
-
-    if total_q > 0:
-        questions = [q for q, _, _ in st.session_state.chat_history]
-        freq = Counter(questions).most_common(5)
-
-        st.sidebar.markdown("**Top 5 Questions:**")
-        for q, c in freq:
-            st.sidebar.markdown(f"- {q} ({c})")
-
-        last_active = st.session_state.chat_history[-1][2].strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        st.sidebar.markdown(f"**Last Active:** {last_active}")
-
-        if st.sidebar.button("Export Chat History"):
-            df = pd.DataFrame(
-                st.session_state.chat_history,
-                columns=["Question", "Answer", "Timestamp"]
+        if unreadable_pdfs:
+            st.sidebar.warning(
+                "⚠️ Scanned PDFs detected:\n" + ", ".join(unreadable_pdfs)
             )
-            df.to_csv("chat_history.csv", index=False)
-            st.sidebar.success("✅ Chat history exported")
+
+    # Knowledge Preview
+    st.sidebar.subheader("Knowledge Preview")
+    st.sidebar.write(f"Characters loaded: {len(knowledge)}")
+    st.sidebar.text_area("Stored Knowledge", knowledge, height=200)
+
+    # Analytics
+    st.sidebar.subheader("Chat Analytics")
+    total_q = len(st.session_state.chat_history)
+    st.sidebar.write(f"Total Questions: {total_q}")
 
 # -----------------------------
 # Footer
@@ -251,6 +237,6 @@ if st.session_state.admin_unlocked:
 st.markdown("""
 <div class="footer">
 Powered by AI | Developed by <b>Bilal AI Studio</b><br>
-This chatbot provides informational responses only.
+Informational responses only.
 </div>
 """, unsafe_allow_html=True)
