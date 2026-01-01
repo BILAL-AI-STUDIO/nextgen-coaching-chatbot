@@ -12,6 +12,7 @@ from datetime import datetime
 # -----------------------------
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
 
 if not OPENROUTER_API_KEY:
     st.error("⚠️ OPENROUTER_API_KEY not found.")
@@ -21,20 +22,20 @@ if not OPENROUTER_API_KEY:
 # Page Config
 # -----------------------------
 st.set_page_config(
-    page_title="NextGen Coaching Center AI Assistant",
+    page_title="CHAT WITH NEXTGEN COACHING CENTER",
     layout="centered"
 )
 
 # -----------------------------
-# Branding Header
+# Header
 # -----------------------------
 st.markdown("""
 <style>
 .chat-header {
     background: linear-gradient(90deg, #4285f4, #5a95f5);
-    padding: 16px;
+    padding: 14px;
     color: white;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: bold;
     border-radius: 10px;
     text-align: center;
@@ -46,7 +47,6 @@ st.markdown("""
     margin-top: 20px;
 }
 </style>
-
 <div class="chat-header">
 Official AI Assistant – NextGen Coaching Center
 </div>
@@ -63,14 +63,10 @@ MAX_CONTEXT = 4500
 # Session State
 # -----------------------------
 if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant",
-        "content": (
-            "👋 Welcome!\n\n"
-            "I can help you with admissions, fees, courses, and timings.\n"
-            "You can ask in **English or Urdu**."
-        )
-    }]
+    st.session_state.messages = [
+        {"role": "assistant",
+         "content": "👋 Welcome! Ask about admissions, fees, courses or timings.\nYou can ask in English or Urdu."}
+    ]
 
 if "admin_unlocked" not in st.session_state:
     st.session_state.admin_unlocked = False
@@ -79,12 +75,12 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # -----------------------------
-# Load Knowledge
+# Load Knowledge (SAFE)
 # -----------------------------
 knowledge = ""
 if os.path.exists("knowledge.txt"):
     with open("knowledge.txt", "r", encoding="utf-8") as f:
-        knowledge = f.read().strip()
+        knowledge = f.read()
 
 # -----------------------------
 # Display Chat
@@ -96,29 +92,29 @@ for msg in st.session_state.messages:
 # -----------------------------
 # Chat Input
 # -----------------------------
-user_input = st.chat_input("Type your question...")
+user_input = st.chat_input("Message...")
 
 if user_input:
-    admin_trigger = st.secrets.get("ADMIN_TRIGGER", "@admin")
+    # Admin login command
+    if user_input.startswith("/admin"):
+        entered = user_input.replace("/admin", "").strip()
+        if ADMIN_PASSWORD and entered == ADMIN_PASSWORD:
+            st.session_state.admin_unlocked = True
+            st.session_state.messages.append(
+                {"role": "assistant", "content": "🔐 Admin panel unlocked."}
+            )
+        else:
+            st.session_state.messages.append(
+                {"role": "assistant", "content": "❌ Invalid admin password."}
+            )
 
-    if user_input.strip() == admin_trigger:
-        st.session_state.admin_unlocked = True
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": "🔐 Admin panel unlocked."
-        })
-        with st.chat_message("assistant"):
-            st.markdown("🔐 Admin panel unlocked.")
     else:
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        if len(knowledge) < 200:
-            bot_reply = (
-                "⚠️ Knowledge base is empty or unreadable.\n"
-                "Please contact the office."
-            )
+        if not knowledge.strip():
+            bot_reply = "⚠️ Knowledge not uploaded yet."
         else:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -131,22 +127,18 @@ if user_input:
                     {
                         "role": "system",
                         "content": (
-                            "You are the official AI assistant of a coaching center.\n"
-                            "Rules:\n"
-                            "- Use ONLY the provided document\n"
-                            "- Answer briefly (1–3 sentences)\n"
-                            "- Match user language (English/Urdu)\n"
-                            "- If exact answer not found, give closest relevant info\n"
-                            "- If nothing is relevant, reply:\n"
-                            "'Information not available. Please contact the office.'"
+                            "You are a helpful coaching center assistant. "
+                            "Answer shortly (1–2 sentences). "
+                            "Use English or Urdu based on user language. "
+                            "Answer ONLY from the document."
                         )
                     },
                     {
                         "role": "user",
-                        "content": f"DOCUMENT:\n{knowledge}\n\nQUESTION:\n{user_input}"
+                        "content": f"Document:\n{knowledge}\n\nQuestion:\n{user_input}"
                     }
                 ],
-                "max_output_tokens": 150,
+                "max_output_tokens": 100,
                 "temperature": 0.2
             }
 
@@ -162,7 +154,7 @@ if user_input:
                     bot_reply = (
                         data["choices"][0]["message"]["content"]
                         if "choices" in data else
-                        "⚠️ Error generating response."
+                        "Error generating response"
                     )
                     st.markdown(bot_reply)
 
@@ -172,7 +164,7 @@ if user_input:
         )
 
 # -----------------------------
-# Admin Panel
+# Admin Panel (SAFE)
 # -----------------------------
 if st.session_state.admin_unlocked:
     st.sidebar.header("🔐 Admin Panel")
@@ -180,63 +172,56 @@ if st.session_state.admin_unlocked:
     # PDF Upload
     st.sidebar.subheader("Upload Knowledge PDFs")
     uploaded_files = st.sidebar.file_uploader(
-        "Upload PDF files",
+        "Select PDF(s)",
         type="pdf",
         accept_multiple_files=True
     )
 
     pdf_text = ""
-    unreadable_pdfs = []
 
     if uploaded_files:
         for file in uploaded_files:
             reader = PyPDF2.PdfReader(file)
-            extracted = ""
             for page in reader.pages:
-                extracted += page.extract_text() or ""
-
-            if len(extracted.strip()) < 50:
-                unreadable_pdfs.append(file.name)
-            else:
-                pdf_text += extracted
+                pdf_text += page.extract_text() or ""
 
             with open(os.path.join(KNOWLEDGE_DIR, file.name), "wb") as f:
                 f.write(file.getbuffer())
 
-    # Text Upload (PRIORITY)
-    st.sidebar.subheader("Add Text Information (High Priority)")
+    # Text Upload (SAFE – optional)
+    st.sidebar.subheader("Add Text Information (Optional)")
     admin_text = st.sidebar.text_area(
-        "Fees, courses, admissions, notices"
+        "Extra info (fees, notices, timings)"
     )
 
     if st.sidebar.button("Update Knowledge"):
-        final_knowledge = (admin_text + "\n\n" + pdf_text)[:MAX_CONTEXT]
-        with open("knowledge.txt", "w", encoding="utf-8") as f:
-            f.write(final_knowledge)
+        final_text = knowledge
 
-        st.sidebar.success("✅ Knowledge updated successfully")
+        if pdf_text.strip():
+            final_text = pdf_text[:MAX_CONTEXT]
 
-        if unreadable_pdfs:
-            st.sidebar.warning(
-                "⚠️ Scanned PDFs detected:\n" + ", ".join(unreadable_pdfs)
-            )
+        if admin_text.strip():
+            final_text = (admin_text + "\n\n" + final_text)[:MAX_CONTEXT]
+
+        if final_text.strip():
+            with open("knowledge.txt", "w", encoding="utf-8") as f:
+                f.write(final_text)
+            st.sidebar.success("✅ Knowledge updated safely")
 
     # Knowledge Preview
     st.sidebar.subheader("Knowledge Preview")
-    st.sidebar.write(f"Characters loaded: {len(knowledge)}")
+    st.sidebar.write(f"Characters: {len(knowledge)}")
     st.sidebar.text_area("Stored Knowledge", knowledge, height=200)
 
     # Analytics
-    st.sidebar.subheader("Chat Analytics")
-    total_q = len(st.session_state.chat_history)
-    st.sidebar.write(f"Total Questions: {total_q}")
+    st.sidebar.subheader("Chat Statistics")
+    st.sidebar.write(f"Total Questions: {len(st.session_state.chat_history)}")
 
 # -----------------------------
 # Footer
 # -----------------------------
 st.markdown("""
 <div class="footer">
-Powered by AI | Developed by <b>Bilal AI Studio</b><br>
-Informational responses only.
+Powered by AI | Developed by <b>Bilal AI Studio</b>
 </div>
 """, unsafe_allow_html=True)
