@@ -83,10 +83,8 @@ def load_knowledge():
             return f.read().strip()
     return ""
 
-knowledge = load_knowledge()
-
 # -----------------------------
-# Display Chat
+# Display Chat Messages
 # -----------------------------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -115,10 +113,11 @@ if user_input:
         with st.chat_message("user"):
             st.markdown(user_input)
 
+        # Reload knowledge every time user sends a message
         knowledge = load_knowledge()
 
         if not knowledge:
-            bot_reply = "⚠️ Knowledge base is empty. Please upload documents."
+            bot_reply = "⚠️ Knowledge base is empty. Please upload PDFs or text first."
         else:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -138,7 +137,7 @@ if user_input:
                     },
                     {
                         "role": "user",
-                        "content": f"{knowledge}\n\nQuestion: {user_input}"
+                        "content": f"Document:\n{knowledge}\n\nQuestion:\n{user_input}"
                     }
                 ],
                 "max_output_tokens": 120,
@@ -198,7 +197,7 @@ if st.session_state.admin_unlocked:
                 pdf_content = ""
                 for page in reader.pages:
                     pdf_content += page.extract_text() or ""
-                if pdf_content.strip() == "":
+                if not pdf_content.strip():
                     st.sidebar.warning(f"⚠️ {file.name} seems empty or scanned (PyPDF2 cannot read).")
                 else:
                     combined_text += pdf_content + "\n"
