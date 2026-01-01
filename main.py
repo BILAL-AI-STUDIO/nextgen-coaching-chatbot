@@ -26,7 +26,7 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Header
+# Custom Header
 # -----------------------------
 st.markdown("""
 <style>
@@ -37,51 +37,39 @@ st.markdown("""
     font-size: 18px;
     font-weight: bold;
     border-radius: 10px;
-    text-align: center;
-}
-.footer {
-    text-align: center;
-    font-size: 12px;
-    color: gray;
-    margin-top: 20px;
 }
 </style>
 <div class="chat-header">
-CHAT WITH NEXTGEN COACHING CENTER
+    "CHAT WITH NEXTGEN COACHING CENTER
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# Constants
+# Knowledge Directory
 # -----------------------------
 KNOWLEDGE_DIR = "knowledge_pdfs"
-KNOWLEDGE_FILE = "knowledge.txt"
 os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
-MAX_CONTEXT = 6000
+MAX_CONTEXT = 4500
 
 # -----------------------------
 # Session State
 # -----------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant",
-         "content": "Hi! What can I help you with? You can ask in English or Urdu."}
+        {"role": "assistant", "content": "Hi! What can I help you with?"}
     ]
-
 if "admin_unlocked" not in st.session_state:
     st.session_state.admin_unlocked = False
-
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+    st.session_state.chat_history = []  # Stores (question, answer, timestamp)
 
 # -----------------------------
 # Load Knowledge
 # -----------------------------
-def load_knowledge():
-    if os.path.exists(KNOWLEDGE_FILE):
-        with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return ""
+knowledge = ""
+if os.path.exists("knowledge.txt"):
+    with open("knowledge.txt", "r", encoding="utf-8") as f:
+        knowledge = f.read()
 
 # -----------------------------
 # Display Chat Messages
@@ -96,9 +84,8 @@ for msg in st.session_state.messages:
 user_input = st.chat_input("Message...")
 
 if user_input:
-    admin_trigger = st.secrets.get("ADMIN_TRIGGER", "@supersecret")
-
-    # ---- Admin Unlock ----
+    # Check for admin trigger
+    admin_trigger = st.secrets.get("ADMIN_TRIGGER", "@admin")
     if user_input.strip() == admin_trigger:
         st.session_state.admin_unlocked = True
         st.session_state.messages.append(
@@ -106,18 +93,15 @@ if user_input:
         )
         with st.chat_message("assistant"):
             st.markdown("🔐 Admin panel unlocked.")
-
-    # ---- Normal Chat ----
     else:
+        # Normal user message
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Reload knowledge every time user sends a message
-        knowledge = load_knowledge()
-
+        # Call AI
         if not knowledge:
-            bot_reply = "⚠️ Knowledge base is empty. Please upload PDFs or text first."
+            bot_reply = "⚠️ No knowledge uploaded yet. Admin must upload PDFs first."
         else:
             headers = {
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -130,9 +114,9 @@ if user_input:
                     {
                         "role": "system",
                         "content": (
-                            "You are a strict document-based assistant. "
-                            "Answer ONLY using the provided document. "
-                            "If the answer is not found, reply exactly: Information not available."
+                            "You are a helpful AI assistant. "
+                            "Answer SHORT (1-2 sentences) and ONLY using the content provided in the document. "
+                            "If the answer is not in the document, reply exactly: 'Information not available.'"
                         )
                     },
                     {
@@ -140,8 +124,8 @@ if user_input:
                         "content": f"Document:\n{knowledge}\n\nQuestion:\n{user_input}"
                     }
                 ],
-                "max_output_tokens": 120,
-                "temperature": 0.1
+                "max_output_tokens": 80,
+                "temperature": 0.2
             }
 
             with st.chat_message("assistant"):
@@ -156,17 +140,14 @@ if user_input:
                     bot_reply = (
                         data["choices"][0]["message"]["content"]
                         if "choices" in data else
-                        "Error generating response."
+                        "Error generating response"
                     )
                     st.markdown(bot_reply)
 
-        st.session_state.messages.append(
-            {"role": "assistant", "content": bot_reply}
-        )
+        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
 
-        st.session_state.chat_history.append(
-            (user_input, bot_reply, datetime.now())
-        )
+        # Save to chat history for analytics
+        st.session_state.chat_history.append((user_input, bot_reply, datetime.now()))
 
 # -----------------------------
 # Admin Panel
@@ -174,75 +155,50 @@ if user_input:
 if st.session_state.admin_unlocked:
     st.sidebar.header("🔐 Admin Panel")
 
-    # ---- Upload PDFs ----
-    pdf_files = st.sidebar.file_uploader(
-        "Upload PDF files",
+    # PDF / Knowledge Upload
+    st.sidebar.subheader("Upload Knowledge PDF(s)")
+    uploaded_files = st.sidebar.file_uploader(
+        "Select PDF(s) to upload",
         type="pdf",
         accept_multiple_files=True
     )
 
-    # ---- Upload Text ----
-    manual_text = st.sidebar.text_area(
-        "Add text information (optional)",
-        height=150
-    )
-
-    if st.sidebar.button("Update Knowledge"):
+    if uploaded_files:
         combined_text = ""
+        for file in uploaded_files:
+            reader = PyPDF2.PdfReader(file)
+            for page in reader.pages:
+                combined_text += page.extract_text() or ""
+            with open(os.path.join(KNOWLEDGE_DIR, file.name), "wb") as f:
+                f.write(file.getbuffer())
 
-        # Process PDFs
-        if pdf_files:
-            for file in pdf_files:
-                reader = PyPDF2.PdfReader(file)
-                pdf_content = ""
-                for page in reader.pages:
-                    pdf_content += page.extract_text() or ""
-                if not pdf_content.strip():
-                    st.sidebar.warning(f"⚠️ {file.name} seems empty or scanned (PyPDF2 cannot read).")
-                else:
-                    combined_text += pdf_content + "\n"
-                # Save PDF to folder
-                with open(os.path.join(KNOWLEDGE_DIR, file.name), "wb") as f:
-                    f.write(file.getbuffer())
-
-        # Add manual text
-        if manual_text.strip():
-            combined_text += manual_text.strip() + "\n"
-
-        if combined_text.strip() == "":
-            st.sidebar.error("❌ No valid text found to update knowledge.")
-        else:
-            # Save final knowledge
-            combined_text = combined_text[:MAX_CONTEXT]
-            with open(KNOWLEDGE_FILE, "w", encoding="utf-8") as f:
-                f.write(combined_text)
-            st.sidebar.success("✅ Knowledge updated successfully!")
+        combined_text = combined_text[:MAX_CONTEXT]
+        with open("knowledge.txt", "w", encoding="utf-8") as f:
+            f.write(combined_text)
+        st.sidebar.success("✅ Knowledge updated successfully")
 
     # -----------------------------
     # Analytics
-    # -----------------------------
-    st.sidebar.subheader("Chat Analytics")
-    total = len(st.session_state.chat_history)
-    st.sidebar.write(f"Total Questions: {total}")
+    st.sidebar.subheader("Chat Statistics")
+    total_questions = len(st.session_state.chat_history)
+    st.sidebar.markdown(f"**Total Questions:** {total_questions}")
 
-    if total:
+    if total_questions > 0:
         questions = [q for q, _, _ in st.session_state.chat_history]
-        for q, c in Counter(questions).most_common(5):
-            st.sidebar.markdown(f"- {q} ({c})")
+        freq = Counter(questions).most_common(5)
+        st.sidebar.markdown("**Top 5 Questions:**")
+        for q, count in freq:
+            st.sidebar.markdown(f"- {q} ({count} times)")
 
+        last_active = st.session_state.chat_history[-1][2].strftime("%Y-%m-%d %H:%M:%S")
+        st.sidebar.markdown(f"**Last Active:** {last_active}")
+
+        # Export chat history
         if st.sidebar.button("Export Chat History"):
             df = pd.DataFrame(
-                st.session_state.chat_history,
+                st.session_state.chat_history, 
                 columns=["Question", "Answer", "Timestamp"]
             )
             df.to_csv("chat_history.csv", index=False)
-            st.sidebar.success("✅ chat_history.csv created")
+            st.sidebar.success("✅ Chat history saved as chat_history.csv")
 
-# -----------------------------
-# Footer
-# -----------------------------
-st.markdown("""
-<div class="footer">
-Powered by AI | Developed by <b>Bilal AI Studio</b>
-</div>
-""", unsafe_allow_html=True)
